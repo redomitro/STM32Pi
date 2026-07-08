@@ -1,63 +1,105 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <iostream>
 #include <spidev_lib++.h>
 
+/* I want to do this with classes */
 
+class ihm02a1{
+public:
+  ihm02a1(const char* spiDev, uint8_t numDevs);
+  uint8_t interlace(uint8_t  *output, uint8_t *input, uint8_t len, uint8_t mask);
+  uint8_t writeRead(uint8_t* tx, uint8_t* rx, uint8_t len);
+  uint8_t numDevices;
 
-/*
-spi_config_t spi_config;
-uint8_t tx_buffer[32];
-uint8_t rx_buffer[32];
-uint8_t zero[32]={0};
+private:
+  spi_config_t spiConfig;
+  SPI* sB; //pointer to this board's SPI bus. Abbreviated because it is used very frequently
+};
 
-int  main( void)
-{
+ihm02a1::ihm02a1(const char* spiDev, uint8_t numDevs){
+  spiConfig.mode = 0;
+  spiConfig.speed = 115200;
+  spiConfig.delay = 0;
+  spiConfig.bits_per_word = 0;
 
-  SPI *mySPI = NULL;
-  
-  spi_config.mode=0;
-  spi_config.speed=1000000;
-  spi_config.delay=0;
-  spi_config.bits_per_word=8;
-
-  mySPI=new SPI("/dev/spidev0.0",&spi_config);
-
-  if (!mySPI->begin())
-    return -1;
-  memset(tx_buffer,0,32);
-  memset(rx_buffer,0,32);
-
-
-  mySPI->xfer(tx_buffer,strlen((char*)tx_buffer),rx_buffer,strlen((char*)tx_buffer));
-
-
-  memset(tx_buffer, 0xc0, 2);
-  memset(tx_buffer+2, 0xd0, 2); //status report
-  memset(tx_buffer+4, 0x07, 2);
-  memset(tx_buffer+6, 0x00, 2);
-  memset(tx_buffer+8, 0x10, 2);
-
-  for (int i=0; i<5; i++){
-    mySPI->xfer(tx_buffer+2*i, 2, rx_buffer+2*i, 2);
-  }
-  /*
-  mySPI->xfer(tx_buffer, 2, rx_buffer, 2);
-  mySPI->xfer(tx_buffer+2, 2, rx_buffer, 2);
-  mySPI->xfer(zero, 2, rx_buffer, 2);
-  mySPI->xfer(zero, 2, rx_buffer+2, 2);
-  mySPI->xfer(zero, 2, rx_buffer+4, 2);
-
-  for(int i = 0; i<4; i++){
-    for(int j = 0; j<8; j++){
-      printf("%02x ", (char)rx_buffer[8*i+j]);
-  }
-    printf("\n");
-  }
-    
-  delete mySPI; 
-
-return 1;
-
+  sB = new SPI(spiDev, &spiConfig);
+  numDevices = numDevs;
 }
-*/
+
+uint8_t interlace(uint8_t *output, uint8_t *input, uint8_t len, uint8_t mask, uint8_t numDevices){
+  //does it make sense to use a mask?
+
+  if(sizeof(output) > len*numDevices){
+    std::cout << "Invalid output\n";
+    return -1;
+  }
+
+  if(numDevices > 8){
+    /*  ok to hardcode this since the ihm02a1
+    only supports daisy chaining up to 4 boards
+    (8 total controllers) */
+    std::cout << "Too many devices\n";
+    return -1;
+  }
+
+  for(uint8_t i = 0; i < numDevices; i++){
+
+  //order of device; remember device directly connected to host MOSI
+  //is last in chain and corresponds to mask msb. I love SPI too
+
+    if((mask >> i) & 1){ //extract corresponding mask bit with bitwise ops
+
+      for(uint8_t j = 0; j < len; j++){
+        memcpy(output+i+j*numDevices, input+j, 1);
+
+        /* if 4 devices connected:
+        device 0 will read from bits 0, 4, 8, 12 etc
+        device 1 will read from bits 1, 5, 9, 13
+        etc */
+      }
+    }
+  }
+
+  return 1;
+}
+
+uint8_t writeRead(SPI* dev, uint8_t* tx, uint8_t* rx, uint8_t len, uint8_t numDevices){
+
+  if(sizeof(tx) < len*numDevices){
+    std::cout << "Invalid output\n";
+    return -1;
+  }
+
+  for(int i = 0; i < len; i++){
+    dev->xfer(tx+i*numDevices, numDevices, rx+i*numDevices, numDevices);
+  }
+
+  return 1;
+}
+
+uint8_t deinterlace(uint8_t *output, uint8_t *input, uint8_t len, uint8_t numDevices){
+
+  if(sizeof(output) > len*numDevices){
+    std::cout << "Invalid output\n";
+    return -1;
+  }
+
+  if(numDevices > 8){
+    /*  ok to hardcode this since the ihm02a1
+    only supports daisy chaining up to 4 boards
+    (8 total controllers) */
+    std::cout << "Too many devices\n";
+    return -1;
+  }
+
+  for(uint8_t i = 0; i < numDevices; i++){
+  //order of devices; device connected directly to MISO (last in wire chain) is first in data chain
+
+    for (uint8_t j = 0; j < len; j++){
+      memcpy(output+j+i*len, input+j*len+i, 1); //basically transposing a matrix here
+    }
+  }
+  return 1;
+}
