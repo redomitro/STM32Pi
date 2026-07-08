@@ -29,22 +29,10 @@ int  main( void)
   mySPI->xfer(tx_buffer,strlen((char*)tx_buffer),rx_buffer,strlen((char*)tx_buffer));
   */
 
-  memset(tx_buffer, 0xc0, 2);
-  memset(tx_buffer+2, 0xd0, 2); //status report
-  memset(tx_buffer+4, 0x07, 2);
-  memset(tx_buffer+6, 0x03, 2);
-  memset(tx_buffer+8, 0xff, 2);
-
   for (int i=0; i<5; i++){
     mySPI->xfer(tx_buffer+2*i, 2, rx_buffer+2*i, 2);
   }
-  /*
-  mySPI->xfer(tx_buffer, 2, rx_buffer, 2);
-  mySPI->xfer(tx_buffer+2, 2, rx_buffer, 2);
-  mySPI->xfer(zero, 2, rx_buffer, 2);
-  mySPI->xfer(zero, 2, rx_buffer+2, 2);
-  mySPI->xfer(zero, 2, rx_buffer+4, 2);
-  */
+
   for(int i = 0; i<4; i++){
     for(int j = 0; j<8; j++){
       printf("%02x ", (char)rx_buffer[8*i+j]);

@@ -1,2 +1,2 @@
 # STM32Pi
-Python code for STM32 boards
+C++ code for STM32 boards
