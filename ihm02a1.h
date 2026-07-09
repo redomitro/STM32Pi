@@ -4,7 +4,24 @@
 #include <iostream>
 #include <spidev_lib++.h>
 
-/* I want to do this with classes */
+/*
+#define NOP 0x00
+#define ABS_POS 0x01
+#define EL_POS 0x02
+#define MARK 0x03
+#define SPEED 0x04
+#define ACC 0x05
+*/
+
+#define NOP 0x00
+#define GO_HOME 0x70
+#define GO_MARK 0x78
+#define SOFT_HIZ 0xa0
+#define HARD_HIZ 0xa8
+#define SOFT_STOP 0xb0
+#define HARD_STOP 0xb8
+#define RESET_DEVICE 0xc0
+#define RESET_POS 0xd8
 
 class ihm02a1{
 public:
@@ -14,11 +31,32 @@ public:
   uint8_t deinterlace(uint8_t *output, uint8_t *input, uint8_t len);
   uint8_t writeRead(uint8_t* rx, uint8_t* tx, uint8_t len);
   uint8_t numDevices;
+
+  //functions that call command
   uint8_t reset(uint8_t mask);
+  uint8_t goHome(uint8_t mask);
+  uint8_t goMark(uint8_t mask);
+  uint8_t resetPos(uint8_t mask);
+  uint8_t softStop(uint8_t mask);
+  uint8_t softHiZ(uint8_t mask);
+  uint8_t hardStop(uint8_t mask);
+  uint8_t hardHiZ(uint8_t mask);
+
+  //functions that call commandResponse
   uint8_t getStatus(uint8_t* output, uint8_t mask);
+  uint8_t getParam(uint8_t* output, uint8_t param, uint8_t mask);
+
+  //functions that call commandArg
+  uint8_t setParam(uint8_t param, size_t value, uint8_t mask);
+  uint8_t jog(bool dir, uint8_t speed, uint8_t mask);
+  uint8_t tweak(bool dir, uint8_t distance, uint8_t mask);
+  uint8_t move(uint8_t pos, uint8_t mask);
 
 private:
   spi_config_t spiConfig;
+  uint8_t command(uint8_t cmd, uint8_t mask);
+  uint8_t commandArg(uint8_t cmd, size_t arg, uint8_t argLen, uint8_t mask);
+  uint8_t commandResponse(uint8_t* output, uint8_t cmd, uint8_t respLen, uint8_t mask);
   SPI* sB; //pointer to this board's SPI bus. Abbreviated because it is used very frequently
 };
 
@@ -103,15 +141,47 @@ uint8_t ihm02a1::deinterlace(uint8_t *output, uint8_t *input, uint8_t len){
   return 1;
 }
 
-uint8_t ihm02a1::reset(uint8_t mask){
+uint8_t ihm02a1::command(uint8_t cmd, uint8_t mask){
+  //generic function for all one-byte commands
+  uint8_t message[1] = {cmd};
+  uint8_t txBuffer[numDevices] = {0};
+  uint8_t rxBuffer[numDevices] = {0};
 
-  uint8_t message[1] = {0xc0};
-  uint8_t tx_buffer[numDevices];
-  uint8_t rx_buffer[numDevices];
-
-  this->interlace(tx_buffer, message, 1, mask);
-  this->writeRead(rx_buffer, tx_buffer, 1); //no need to interlace a 1-byte command
+  this->interlace(txBuffer, message, 1, mask);
+  this->writeRead(rxBuffer, txBuffer, 1);
   return 1;
+}
+
+uint8_t ihm02a1::reset(uint8_t mask){
+  return this->command(RESET_DEVICE, mask);
+}
+
+uint8_t ihm02a1::goHome(uint8_t mask){
+  return this->command(GO_HOME, mask);
+}
+
+uint8_t ihm02a1::goMark(uint8_t mask){
+  return this->command(GO_MARK, mask);
+}
+
+uint8_t ihm02a1::resetPos(uint8_t mask){
+  return this->command(RESET_POSITION, mask);
+}
+
+uint8_t ihm02a1::softStop(uint8_t mask){
+  return this->command(SOFT_STOP, mask);
+}
+
+uint8_t ihm02a1::softHiZ(uint8_t mask){
+  return this->command(SOFT_HIZ, mask);
+}
+
+uint8_t ihm02a1::hardStop(uint8_t mask){
+  return this->command(HARD_STOP, mask);
+}
+
+uint8_t ihm02a1::hardHiZ(uint8_t mask){
+  return this->command(HARD_HIZ, mask);
 }
 
 uint8_t ihm02a1::getStatus(uint8_t* output, uint8_t mask){
