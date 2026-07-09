@@ -14,6 +14,8 @@ public:
   uint8_t deinterlace(uint8_t *output, uint8_t *input, uint8_t len);
   uint8_t writeRead(uint8_t* rx, uint8_t* tx, uint8_t len);
   uint8_t numDevices;
+  uint8_t reset(uint8_t mask);
+  uint8_t getStatus(uint8_t* output, uint8_t mask);
 
 private:
   spi_config_t spiConfig;
@@ -78,7 +80,7 @@ uint8_t ihm02a1::writeRead(uint8_t* rx, uint8_t* tx, uint8_t len){
 
 uint8_t ihm02a1::deinterlace(uint8_t *output, uint8_t *input, uint8_t len){
 
-  if(sizeof(output) > len*numDevices){
+  if(sizeof(output) < len*numDevices){
     std::cout << "Deinterlace: Invalid output\n";
     return -1;
   }
@@ -98,5 +100,30 @@ uint8_t ihm02a1::deinterlace(uint8_t *output, uint8_t *input, uint8_t len){
       memcpy(output+j+i*len, input+j*len+i, 1); //basically transposing a matrix here
     }
   }
+  return 1;
+}
+
+uint8_t ihm02a1::reset(uint8_t mask){
+
+  uint8_t message[1] = {0xc0};
+  uint8_t tx_buffer[numDevices];
+  uint8_t rx_buffer[numDevices];
+
+  this->interlace(tx_buffer, message, 1, mask);
+  this->writeRead(rx_buffer, tx_buffer, 1); //no need to interlace a 1-byte command
+  return 1;
+}
+
+uint8_t ihm02a1::getStatus(uint8_t* output, uint8_t mask){
+
+  uint8_t message[] = {0xd0, 0x00, 0x00};
+  uint8_t tx_buffer[32] = {0};
+  uint8_t rx_buffer[32] = {0};
+
+  interlace(tx_buffer, message, 3, mask);
+  writeRead(rx_buffer, tx_buffer, 3);
+
+  deinterlace(output, rx_buffer+numDevices, 2);
+  //discards the first returned word which should be 0x00 anyway
   return 1;
 }
