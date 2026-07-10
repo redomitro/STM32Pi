@@ -4,24 +4,43 @@
 #include <iostream>
 #include <spidev_lib++.h>
 
-/*
-#define NOP 0x00
-#define ABS_POS 0x01
-#define EL_POS 0x02
-#define MARK 0x03
-#define SPEED 0x04
-#define ACC 0x05
-*/
+//define registers
+#define ABS_POS       0x01
+#define EL_POS        0x02
+#define MARK          0x03
+#define SPEED         0x04
+#define ACC           0x05
+#define DEC           0x06
+#define MAX_SPEED     0x07
+#define MIN_SPEED     0x08
+#define KVAL_HOLD     0x09
+#define KVAL_RUN      0x0a
+#define KVAL_ACC      0x0b
+#define KVAL_DEC      0x0c
+#define INT_SPEED     0x0d
+#define ST_SLP        0x0e
+#define FN_SLP_ACC    0x0f
+#define FN_SLP_DEC    0x10
+#define K_THERM       0x11
+#define ADC_OUT       0x12
+#define OCD_TH        0x13
+#define STALL_TH      0x14
+#define FS_SPD        0x15
+#define STEP_MODE     0x16
+#define ALARM_EN      0x17
+#define CONFIG        0x18
 
-#define NOP 0x00
-#define GO_HOME 0x70
-#define GO_MARK 0x78
-#define SOFT_HIZ 0xa0
-#define HARD_HIZ 0xa8
-#define SOFT_STOP 0xb0
-#define HARD_STOP 0xb8
-#define RESET_DEVICE 0xc0
-#define RESET_POS 0xd8
+//define commands
+#define NOP           0x00
+#define GO_HOME       0x70
+#define GO_MARK       0x78
+#define SOFT_HIZ      0xa0
+#define HARD_HIZ      0xa8
+#define SOFT_STOP     0xb0
+#define HARD_STOP     0xb8
+#define RESET_DEVICE  0xc0
+#define RESET_POS     0xd8
+#define GET_STATUS    0xd0
 
 class ihm02a1{
 public:
@@ -165,7 +184,7 @@ uint8_t ihm02a1::goMark(uint8_t mask){
 }
 
 uint8_t ihm02a1::resetPos(uint8_t mask){
-  return this->command(RESET_POSITION, mask);
+  return this->command(RESET_POS, mask);
 }
 
 uint8_t ihm02a1::softStop(uint8_t mask){
@@ -184,16 +203,39 @@ uint8_t ihm02a1::hardHiZ(uint8_t mask){
   return this->command(HARD_HIZ, mask);
 }
 
-uint8_t ihm02a1::getStatus(uint8_t* output, uint8_t mask){
+uint8_t ihm02a1::commandResponse(uint8_t* output, uint8_t cmd, uint8_t respLen, uint8_t mask){
 
-  uint8_t message[] = {0xd0, 0x00, 0x00};
+  uint8_t message[1+respLen] = {0};
   uint8_t tx_buffer[32] = {0};
   uint8_t rx_buffer[32] = {0};
 
-  interlace(tx_buffer, message, 3, mask);
-  writeRead(rx_buffer, tx_buffer, 3);
+  memset(message, cmd, 1);
 
-  deinterlace(output, rx_buffer+numDevices, 2);
-  //discards the first returned word which should be 0x00 anyway
+  interlace(tx_buffer, message, 1+respLen, mask);
+  writeRead(rx_buffer, tx_buffer, 1+respLen);
+
+  deinterlace(output, rx_buffer+numDevices, respLen);
+  //discard the first returned byte which should be 0x00 anyway
   return 1;
 }
+
+uint8_t ihm02a1::getStatus(uint8_t* output, uint8_t mask){
+  return this->commandResponse(output, GET_STATUS, 2, mask);
+}
+
+uint8_t ihm02a1::getParam(uint8_t* output, uint8_t param, uint8_t mask){
+  uint8_t respLen;
+  if (param > 0x19){
+    printf("Out of register range\n");
+    return -1;
+  }
+  uint8_t respLengths[] = {3, 3, 2, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 2};
+                        //00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19
+
+  return this->commandResponse(output, param, respLengths[param], mask);
+}
+/*
+uint8_t ihm02a1::commandArg(uint8_t cmd, size_t arg, uint8_t argLen, uint8_t mask){
+
+}
+*/
