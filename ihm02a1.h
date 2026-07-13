@@ -52,6 +52,10 @@ uint32_t revEndian(uint32_t x){
   return y;
 }
 
+int32_t revEndianSigned(int32_t x){
+  int32_t y = 0;
+}
+
 class ihm02a1{
 public:
   ihm02a1(const char* spiDev, uint8_t numDevs);
@@ -276,4 +280,9 @@ uint8_t ihm02a1::tweak(bool dir, uint32_t distance, uint8_t mask){
   uint32_t arg = revEndian(distance);
   uint8_t cmd = dir ? 0x41 : 0x40;
   return this->commandArg(cmd, arg, 3, mask);
+}
+
+uint8_t ihm02a1::move(int32_t pos, uint8_t mask){
+  int32_t sign = (pos >> 31) & 1; //using int32 to give ourselves room for a left bitshift later
+  //redo this correctly
 }
