@@ -42,6 +42,16 @@
 #define RESET_POS     0xd8
 #define GET_STATUS    0xd0
 
+uint32_t revEndian(uint32_t x){
+  uint32_t y=0;
+  for(int i = 0; i < 4; i++){
+    y <<= 8; //shift LSB over one; shifts zeroes on first run
+    y += x & 255; //copy LSB of x into LSB of y
+    x >>= 8; //discard LSB
+  }
+  return y;
+}
+
 class ihm02a1{
 public:
   ihm02a1(const char* spiDev, uint8_t numDevs);
@@ -67,14 +77,14 @@ public:
 
   //functions that call commandArg
   uint8_t setParam(uint8_t param, size_t value, uint8_t mask);
-  uint8_t jog(bool dir, uint8_t speed, uint8_t mask);
-  uint8_t tweak(bool dir, uint8_t distance, uint8_t mask);
-  uint8_t move(uint8_t pos, uint8_t mask);
+  uint8_t jog(bool dir, uint32_t speed, uint8_t mask);
+  uint8_t tweak(bool dir, uint32_t distance, uint8_t mask);
+  uint8_t move(int32_t pos, uint8_t mask);
 
 private:
   spi_config_t spiConfig;
   uint8_t command(uint8_t cmd, uint8_t mask);
-  uint8_t commandArg(uint8_t cmd, size_t arg, uint8_t argLen, uint8_t mask);
+  uint8_t commandArg(uint8_t cmd, uint32_t arg, uint8_t argLen, uint8_t mask);
   uint8_t commandResponse(uint8_t* output, uint8_t cmd, uint8_t respLen, uint8_t mask);
   SPI* sB; //pointer to this board's SPI bus. Abbreviated because it is used very frequently
 };
@@ -205,16 +215,16 @@ uint8_t ihm02a1::hardHiZ(uint8_t mask){
 
 uint8_t ihm02a1::commandResponse(uint8_t* output, uint8_t cmd, uint8_t respLen, uint8_t mask){
 
-  uint8_t message[1+respLen] = {0};
+  uint8_t message[5] = {0};
   uint8_t tx_buffer[32] = {0};
   uint8_t rx_buffer[32] = {0};
 
   memset(message, cmd, 1);
 
-  interlace(tx_buffer, message, 1+respLen, mask);
-  writeRead(rx_buffer, tx_buffer, 1+respLen);
+  this->interlace(tx_buffer, message, 1+respLen, mask);
+  this->writeRead(rx_buffer, tx_buffer, 1+respLen);
 
-  deinterlace(output, rx_buffer+numDevices, respLen);
+  this->deinterlace(output, rx_buffer+numDevices, respLen);
   //discard the first returned byte which should be 0x00 anyway
   return 1;
 }
@@ -223,6 +233,7 @@ uint8_t ihm02a1::getStatus(uint8_t* output, uint8_t mask){
   return this->commandResponse(output, GET_STATUS, 2, mask);
 }
 
+/*
 uint8_t ihm02a1::getParam(uint8_t* output, uint8_t param, uint8_t mask){
   uint8_t respLen;
   if (param > 0x19){
@@ -234,8 +245,35 @@ uint8_t ihm02a1::getParam(uint8_t* output, uint8_t param, uint8_t mask){
 
   return this->commandResponse(output, param, respLengths[param], mask);
 }
-/*
-uint8_t ihm02a1::commandArg(uint8_t cmd, size_t arg, uint8_t argLen, uint8_t mask){
-
-}
 */
+
+uint8_t ihm02a1::commandArg(uint8_t cmd, uint32_t arg, uint8_t argLen, uint8_t mask){
+
+  uint8_t message[5] = {0};
+  uint8_t tx_buffer[32] = {0};
+  uint8_t rx_buffer[32] = {0};
+
+  memset(message, cmd, 1);
+  memcpy(message+1, &arg, 4);
+
+  this->interlace(tx_buffer, message, 1+argLen, mask);
+  this->writeRead(rx_buffer, tx_buffer, 1+argLen);
+
+  return 1;
+}
+
+uint8_t ihm02a1::jog(bool dir, uint32_t speed, uint8_t mask){
+  speed &= (1 << 20) - 1;
+  speed <<= 8; //speed is in 1/2^28 steps per tick
+  uint32_t arg = revEndian(speed);
+  uint8_t cmd = dir ? 0x51 : 0x50;
+  return this->commandArg(cmd, arg, 3, mask);
+}
+
+uint8_t ihm02a1::tweak(bool dir, uint32_t distance, uint8_t mask){
+  distance &= (1 << 22) - 1;
+  distance <<= 8;
+  uint32_t arg = revEndian(distance);
+  uint8_t cmd = dir ? 0x41 : 0x40;
+  return this->commandArg(cmd, arg, 3, mask);
+}
