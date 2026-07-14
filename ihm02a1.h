@@ -3,7 +3,7 @@
 #include <string.h>
 #include <iostream>
 #include <spidev_lib++.h>
-#include <cstdlib>
+#include <cstdint>
 
 //define registers
 #define ABS_POS       0x01
