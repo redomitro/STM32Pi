@@ -3,6 +3,7 @@
 #include <string.h>
 #include <iostream>
 #include <spidev_lib++.h>
+#include <cstdlib>
 
 //define registers
 #define ABS_POS       0x01
@@ -32,6 +33,7 @@
 
 //define commands
 #define NOP           0x00
+#define GET_PARAM     0x20
 #define GO_HOME       0x70
 #define GO_MARK       0x78
 #define SOFT_HIZ      0xa0
@@ -52,8 +54,11 @@ uint32_t revEndian(uint32_t x){
   return y;
 }
 
-int32_t revEndianSigned(int32_t x){
-  int32_t y = 0;
+uint32_t reverseBitShift(int32_t x, uint8_t regLength){ //takes signed input for type compatibility but will throw an error on a negative input
+  x &= (1 << regLength) - 1; //zero out unwanted bits
+  x <<= 8*(3-(regLength-1)/8)); //rounds up to 24 (1-byte arg), 16, 8 or 0 (4-byte arg)
+  uint32_t arg = revEndian(x);
+  return arg;
 }
 
 class ihm02a1{
@@ -80,7 +85,7 @@ public:
   uint8_t getParam(uint8_t* output, uint8_t param, uint8_t mask);
 
   //functions that call commandArg
-  uint8_t setParam(uint8_t param, size_t value, uint8_t mask);
+  uint8_t setParam(uint8_t param, int32_t value, uint8_t mask);
   uint8_t jog(bool dir, uint32_t speed, uint8_t mask);
   uint8_t tweak(bool dir, uint32_t distance, uint8_t mask);
   uint8_t move(int32_t pos, uint8_t mask);
@@ -176,11 +181,11 @@ uint8_t ihm02a1::deinterlace(uint8_t *output, uint8_t *input, uint8_t len){
 
 uint8_t ihm02a1::command(uint8_t cmd, uint8_t mask){
   //generic function for all one-byte commands
-  uint8_t message[1] = {cmd};
+  uint8_t message = cmd;
   uint8_t txBuffer[numDevices] = {0};
   uint8_t rxBuffer[numDevices] = {0};
 
-  this->interlace(txBuffer, message, 1, mask);
+  this->interlace(txBuffer, &message, 1, mask);
   this->writeRead(rxBuffer, txBuffer, 1);
   return 1;
 }
@@ -237,7 +242,7 @@ uint8_t ihm02a1::getStatus(uint8_t* output, uint8_t mask){
   return this->commandResponse(output, GET_STATUS, 2, mask);
 }
 
-/*
+
 uint8_t ihm02a1::getParam(uint8_t* output, uint8_t param, uint8_t mask){
   uint8_t respLen;
   if (param > 0x19){
@@ -246,10 +251,10 @@ uint8_t ihm02a1::getParam(uint8_t* output, uint8_t param, uint8_t mask){
   }
   uint8_t respLengths[] = {3, 3, 2, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 2};
                         //00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19
-
-  return this->commandResponse(output, param, respLengths[param], mask);
+  respLen = respLengths[param];
+  return this->commandResponse(output, 0x20+param, respLen, mask);
 }
-*/
+
 
 uint8_t ihm02a1::commandArg(uint8_t cmd, uint32_t arg, uint8_t argLen, uint8_t mask){
 
@@ -264,6 +269,93 @@ uint8_t ihm02a1::commandArg(uint8_t cmd, uint32_t arg, uint8_t argLen, uint8_t m
   this->writeRead(rx_buffer, tx_buffer, 1+argLen);
 
   return 1;
+}
+
+uint8_t ihm02a1::setParam(uint8_t param, int32_t value, uint8_t mask){
+  uint8_t regLen;
+  int32_t sign = value >> 31; //True for negative, False for 0/positive
+  if(sign && !(param == 1 || param == 3)){
+    printf("Error: Negative values not allowed!\n");
+    return -1;
+  }
+  switch(param){
+    case ABS_POS:
+      value &= (1 << 21) - 1 | sign << 21;
+      value <<= 8;
+      uint32_t arg = revEndian(value);
+      regLen = 22;
+      break;
+    case MARK:
+      value &= (1 << 21) - 1 | sign << 21;
+      value <<= 8;
+      uint32_t arg = revEndian(value);
+      regLen = 22;
+      break;
+    case ACC:
+      regLen = 12;
+      break;
+    case DEC:
+      regLen = 12;
+      break;
+    case MAX_SPEED:
+      regLen = 10;
+      break;
+    case MIN_SPEED:
+      regLen = 13;
+      break;
+    case FS_SPD:
+      regLen = 10;
+      break;
+    case KVAL_HOLD:
+      regLen = 8;
+      break;
+    case KVAL_RUN:
+      regLen = 8;
+      break;
+    case KVAL_ACC:
+      regLen = 8;
+      break;
+    case KVAL_DEC:
+      regLen = 8;
+      break;
+    case INT_SPEED:
+      regLen = 14;
+      break;
+    case ST_SLP:
+      regLen = 8;
+      break;
+    case FN_SLP_ACC:
+      regLen = 8;
+      break;
+    case FN_SLP_DEC:
+      regLen = 8;
+      break;
+    case K_THERM:
+      regLen = 4;
+      break;
+    case OCD_TH:
+      regLen = 4;
+      break;
+    case STALL_TH:
+      regLen = 7;
+      break;
+    case STEP_MODE
+      regLen = 8;
+      break;
+    case ALARM_ENABLE
+      regLen = 8;
+      break;
+    case CONFIG
+      regLen = 16;
+      break;
+    default:
+      printf("Error: Non-writeable register\n");
+      return -1;
+      break;
+  }
+  uint32_t arg = reverseBitShift(value, regLen);
+  argLen = 1+(regLen-1)/8; //rounding up
+  return this->commandArg(param, arg, argLen, mask);
 }
 
 uint8_t ihm02a1::jog(bool dir, uint32_t speed, uint8_t mask){
@@ -283,6 +375,10 @@ uint8_t ihm02a1::tweak(bool dir, uint32_t distance, uint8_t mask){
 }
 
 uint8_t ihm02a1::move(int32_t pos, uint8_t mask){
-  int32_t sign = (pos >> 31) & 1; //using int32 to give ourselves room for a left bitshift later
-  //redo this correctly
+  int32_t sign = pos >> 31; //using int32 to give ourselves room for a left bitshift later
+  uint32_t argLE = pos & ((1 << 21) - 1);
+  argLE |= sign << 21;
+  argLE <<= 8;
+  uint32_t arg = revEndian(argLE);
+  return this->commandArg(0x60, arg, 3, mask);
 }
